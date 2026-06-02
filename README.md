@@ -7,18 +7,20 @@
 
 ---
 
-## What works (M1 — scaffold)
+## What works (M3 — run engine + trajectory capture)
 
 - **Monorepo initialized** with `uv` (Python) and `pnpm` workspaces.
-- **Python package** `rubricon` installable via `uv sync`; entry point `rubricon` wired through `pyproject.toml`.
-- **Typer CLI stub** — `rubricon run <suite>` and `rubricon serve` are registered commands; both print `"not yet implemented"` and exit cleanly.
-- **Dependency manifest** declared in `pyproject.toml`: `anthropic`, `fastapi`, `uvicorn`, `pydantic`, `pyyaml`, `typer`, `aiosqlite`, `rich`; dev extras: `ruff`, `pytest`, `pytest-asyncio`, `pre-commit`.
-- **Ruff** configured for Python 3.11, line-length 100, E/F/I rule sets.
-- **Next.js 14 App Router** scaffold under `dashboard/` with Tailwind CSS and TypeScript.
-- **Pre-commit hooks**: `ruff` + `ruff-format` on `backend/`; `prettier` on `dashboard/`.
-- **MIT license** and `.gitignore`.
+- **Pydantic domain models** — `Suite`, `Scenario`, `Rubric`, `Criterion`, `Trajectory`, `TrajectorySpan`, `ScenarioResult`, `RunRecord`.
+- **YAML loader** — `load_suite(path)` validates YAML against Pydantic models with friendly error messages.
+- **SQLAlchemy 2.0 async ORM** — five tables: `suites`, `runs`, `scenario_results`, `trajectory_spans`, `scores` (schema-only for M4).
+- **Async storage layer** — `persist_run` upserts suite + inserts run/results/spans in one transaction; `get_run` retrieves full `RunRecord`.
+- **Agent adapter protocol** + `ResearchAgent` — drives a real Anthropic agentic loop with a stubbed `web_search` tool; captures every model call, tool call, tool result, and final output as `TrajectorySpan` objects.
+- **Run engine** — `execute_run` runs all scenarios concurrently behind an `asyncio.Semaphore`; one failure never aborts the rest.
+- **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table; prints run ID and pass/fail summary when complete.
+- **Example suite** — `backend/examples/research_agent_suite.yaml` (3 scenarios, 2 rubric criteria).
+- **Test suite** — `tests/test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`.
 
-Nothing from M2 onward (models, storage, engine, judge, server, dashboard pages) is implemented yet.
+LLM judge scores (`M4`), FastAPI server (`M5`), and Next.js dashboard (`M6+`) are not yet implemented.
 
 ---
 
@@ -30,7 +32,9 @@ This catches the failure mode every agent developer has hit: right answer, wrong
 
 ---
 
-## Demo flow (target — not yet functional)
+## Demo flow
+
+Steps 1–3 work today. Steps 4–8 require M5/M6 (FastAPI server and Next.js dashboard — not yet implemented).
 
 1. **Clone and install**
    ```bash
@@ -45,24 +49,25 @@ This catches the failure mode every agent developer has hit: right answer, wrong
    export ANTHROPIC_API_KEY=sk-ant-...
    ```
 
-3. **Run a suite** — terminal streams 8 scenarios; per-criterion scores print live
+3. **Run a suite** — terminal streams scenarios live with Rich progress table; exits with run ID and pass/fail summary
    ```bash
+   cd backend
    rubricon run examples/research_agent_suite.yaml
    ```
 
-4. **Open the dashboard**
+4. *(M5)* **Open the dashboard**
    ```bash
    rubricon serve
    # → http://localhost:3000
    ```
 
-5. **Review results** — click the latest run, see overall score 3.6/5, two failing scenarios highlighted in red.
+5. *(M6)* **Review results** — click the latest run, see overall score 3.6/5, two failing scenarios highlighted in red.
 
-6. **Inspect a failure** — click a failing scenario to open the trajectory timeline. Collapsible spans show the agent called `web_search` with a malformed query; the judge's justification quotes that exact span.
+6. *(M6)* **Inspect a failure** — click a failing scenario to open the trajectory timeline. Collapsible spans show the agent called `web_search` with a malformed query; the judge's justification quotes that exact span.
 
 7. **Tweak your agent** — edit the system prompt, re-run the suite.
 
-8. **Compare runs** — hit **Compare** in the dashboard to diff two runs side-by-side: which scenarios moved, which criteria moved, regressions flagged in red.
+8. *(M6)* **Compare runs** — hit **Compare** in the dashboard to diff two runs side-by-side: which scenarios moved, which criteria moved, regressions flagged in red.
 
 ---
 
@@ -124,7 +129,7 @@ rubricon run examples/research_agent_suite.yaml
 ### Start the dashboard
 
 ```bash
-rubricon serve
+rubricon serve   # not yet implemented — M5
 ```
 
 ---
@@ -164,20 +169,30 @@ rubricon/
 ├── backend/                    # Python package (rubricon)
 │   ├── pyproject.toml          # dependencies, ruff config, pytest config
 │   ├── uv.lock
+│   ├── examples/
+│   │   └── research_agent_suite.yaml   # 3-scenario reference suite
+│   ├── tests/
+│   │   ├── test_models.py
+│   │   ├── test_loader.py
+│   │   ├── test_engine.py
+│   │   └── test_storage.py
 │   └── rubricon/
 │       ├── __init__.py
-│       └── cli.py              # typer CLI stub: run / serve (not yet implemented)
-│           # planned: models.py, engine.py, judge.py, storage.py, server.py
+│       ├── models.py           # Pydantic domain models
+│       ├── loader.py           # YAML suite loader
+│       ├── schema.py           # SQLAlchemy ORM (5 tables)
+│       ├── storage.py          # async SQLite persist/read
+│       ├── agent.py            # Agent protocol + ResearchAgent
+│       ├── engine.py           # async run orchestrator
+│       └── cli.py              # Typer CLI: run / serve
 ├── dashboard/                  # Next.js 14 App Router scaffold
 │   ├── src/app/
 │   │   ├── layout.tsx
 │   │   ├── page.tsx
 │   │   └── globals.css
-│   │   # planned: runs/[id]/ (run detail + trajectory view)
 │   ├── tailwind.config.ts
 │   ├── next.config.js
 │   └── package.json
-│   # planned: examples/research_agent_suite.yaml
 ├── .gitignore
 ├── .pre-commit-config.yaml     # ruff (Python) + prettier (TS/YAML)
 ├── LICENSE
@@ -190,13 +205,11 @@ rubricon/
 ## Roadmap
 
 - [x] **M1** — Monorepo scaffold: uv + pnpm workspaces, Typer CLI stub, ruff/prettier pre-commit hooks, MIT license
-- [ ] **M2** — Pydantic models: `Suite`, `Scenario`, `Rubric`, `Trajectory`, `Score`
-- [ ] **M3** — SQLite schema + storage layer
-- [ ] **M4** — Agent adapter protocol + reference research agent
-- [ ] **M5** — Run engine (asyncio, concurrency, live streaming)
-- [ ] **M6** — LLM judge with versioned prompts
-- [ ] **M7** — FastAPI read-only server
-- [ ] **M8** — Next.js dashboard (suite list → run detail → trajectory → diff)
+- [x] **M2** — Pydantic domain models, YAML suite loader, SQLAlchemy 2.0 async schema (5 tables), async SQLite storage layer
+- [x] **M3** — Agent adapter protocol, `ResearchAgent` (Anthropic agentic loop + trajectory capture), async run engine with concurrency semaphore, Rich CLI, example suite, test suite
+- [ ] **M4** — LLM judge with versioned prompts (Claude scores each rubric criterion against trajectory)
+- [ ] **M5** — FastAPI read-only server
+- [ ] **M6** — Next.js dashboard (suite list → run detail → trajectory → diff)
 - **Later**: cost/latency dashboards, OpenAI judge, VS Code extension
 
 ---

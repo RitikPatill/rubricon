@@ -1,0 +1,37 @@
+name: research_agent_suite
+description: Reference suite for the stub research agent
+scenarios:
+  - id: capital_cities
+    description: Simple factual lookup
+    input: "What is the capital of France?"
+    ground_truth: "Paris"
+  - id: multi_step
+    description: Requires multiple tool calls
+    input: "Find the population of Tokyo and compare it to London."
+    ground_truth: null
+  - id: nonsense_query
+    description: Edge case with an unanswerable query
+    input: "What is the sound of one hand clapping (search for it)?"
+    ground_truth: null
+rubric:
+  criteria:
+    - name: correctness
+      description: Is the final answer factually correct?
+      weight: 2.0
+      descriptors:
+        1: "Answer is wrong or absent"
+        2: "Answer is mostly wrong"
+        3: "Answer is partially correct"
+        4: "Answer is mostly correct"
+        5: "Answer is completely correct"
+      pass_threshold: 3
+    - name: tool_use_quality
+      description: Did the agent use tools effectively?
+      weight: 1.0
+      descriptors:
+        1: "No tools used when needed, or all calls malformed"
+        2: "Tools used but with poor queries"
+        3: "Tools used adequately"
+        4: "Tools used well"
+        5: "Tools used optimally with precise queries"
+      pass_threshold: 2
