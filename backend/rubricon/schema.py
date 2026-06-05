@@ -31,6 +31,7 @@ class RunRow(Base):
     started_at: Mapped[str] = mapped_column(Text, nullable=False)
     finished_at: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="running")
+    overall_score: Mapped[float | None] = mapped_column(nullable=True)
 
     suite: Mapped[SuiteRow] = relationship("SuiteRow", back_populates="runs")
     scenario_results: Mapped[list[ScenarioResultRow]] = relationship(
@@ -49,6 +50,7 @@ class ScenarioResultRow(Base):
     final_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[str | None] = mapped_column(Text, nullable=True)
     finished_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weighted_score: Mapped[float | None] = mapped_column(nullable=True)
 
     run: Mapped[RunRow] = relationship("RunRow", back_populates="scenario_results")
     trajectory_spans: Mapped[list[TrajectorySpanRow]] = relationship(
@@ -85,6 +87,7 @@ class ScoreRow(Base):
     score: Mapped[int | None] = mapped_column(nullable=True)
     justification: Mapped[str | None] = mapped_column(Text, nullable=True)
     cited_span_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     scenario_result: Mapped[ScenarioResultRow] = relationship(
         "ScenarioResultRow", back_populates="scores"

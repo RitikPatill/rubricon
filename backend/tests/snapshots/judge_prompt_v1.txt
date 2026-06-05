@@ -1,0 +1,18 @@
+Evaluate the agent trajectory below against this criterion.
+
+## Criterion
+**Name:** accuracy
+**Description:** How accurate is the agent's final answer?
+
+## Scoring Descriptors
+  1: Completely wrong
+  2: Mostly wrong
+  3: Partially correct
+  4: Mostly correct
+  5: Completely correct
+
+## Agent Trajectory
+[1] FINAL_OUTPUT  id=abc123  started=2024-01-01T12:00:00+00:00  ended=2024-01-01T12:00:01+00:00
+    text: The answer is 42.
+
+Call record_score with your integer score (1–5), a brief justification, and the cited_span_id of the span that most influenced your decision (or null).

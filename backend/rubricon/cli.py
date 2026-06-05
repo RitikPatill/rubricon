@@ -16,6 +16,12 @@ app = typer.Typer(help="Rubricon — rubric-based evaluation harness for AI agen
 console = Console()
 
 
+def _score_display(row: dict) -> str:
+    if row["weighted_score"] is not None:
+        return f"{row['weighted_score']:.2f}/5"
+    return "—"
+
+
 def _make_table(rows: list[dict]) -> Table:
     table = Table(title="Rubricon Run", expand=True)
     table.add_column("Scenario ID", style="cyan", no_wrap=True)
@@ -28,7 +34,7 @@ def _make_table(rows: list[dict]) -> Table:
             row["scenario_id"],
             f"[{status_style}]{row['status']}[/{status_style}]",
             str(row["spans"]),
-            row["score"],
+            _score_display(row),
         )
     return table
 
@@ -41,6 +47,7 @@ def run(
     agent: str = typer.Option(
         "research", "--agent", help="Agent to use (currently: research)"
     ),
+    no_judge: bool = typer.Option(False, "--no-judge", help="Skip LLM judging"),
 ) -> None:
     """Run an evaluation suite against your agent."""
     if agent == "research":
@@ -68,14 +75,19 @@ def run(
     rows_by_id: dict[str, dict] = {}
 
     def progress_callback(result: ScenarioResult) -> None:
-        row = {
-            "scenario_id": result.scenario_id,
-            "status": result.status,
-            "spans": len(result.trajectory.spans),
-            "score": "pending",
-        }
-        rows.append(row)
-        rows_by_id[result.scenario_id] = row
+        sid = result.scenario_id
+        if sid in rows_by_id:
+            # Second call after judging — update score on existing row
+            rows_by_id[sid]["weighted_score"] = result.weighted_score
+        else:
+            row = {
+                "scenario_id": sid,
+                "status": result.status,
+                "spans": len(result.trajectory.spans),
+                "weighted_score": result.weighted_score,
+            }
+            rows.append(row)
+            rows_by_id[sid] = row
 
     from rubricon.engine import execute_run
 
@@ -98,12 +110,16 @@ def run(
                 db_path=db,
                 concurrency=concurrency,
                 progress_callback=cb,
+                judge_enabled=not no_judge,
             )
         )
         live.update(_make_table(rows))
 
     pass_count = sum(1 for r in rows if r["status"] == "pass")
     fail_count = len(rows) - pass_count
+    scored = [r["weighted_score"] for r in rows if r["weighted_score"] is not None]
+    overall_score = sum(scored) / len(scored) if scored else None
+
     console.print()
     console.print(f"[bold green]Done.[/bold green]  Run ID: [cyan]{run_id}[/cyan]")
     console.print(
@@ -111,6 +127,8 @@ def run(
         f"[green]pass: {pass_count}[/green]  |  "
         f"[red]fail/error: {fail_count}[/red]"
     )
+    if overall_score is not None:
+        console.print(f"  Overall score: [bold]{overall_score:.2f}/5[/bold]")
     console.print(f"  DB: {db}")
 
 
