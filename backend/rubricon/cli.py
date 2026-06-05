@@ -133,9 +133,18 @@ def run(
 
 
 @app.command()
-def serve() -> None:
-    """Start the Rubricon dashboard server."""
-    typer.echo("[rubricon] serve not yet implemented")
+def serve(
+    db: str = typer.Option("rubricon.db", "--db", help="Path to SQLite database"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+) -> None:
+    """Start the Rubricon API server (then open http://localhost:3000)."""
+    import uvicorn
+
+    from rubricon.api import create_app
+
+    console.print(f"[bold]Starting Rubricon API[/bold] on http://{host}:{port}")
+    uvicorn.run(create_app(db_path=db), host=host, port=port)
 
 
 if __name__ == "__main__":

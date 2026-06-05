@@ -93,6 +93,53 @@ async def persist_run(engine: AsyncEngine, suite: Suite, run: RunRecord) -> None
                     session.add(score_row)
 
 
+async def list_suites(engine: AsyncEngine) -> list[dict]:
+    """Select all SuiteRows ordered by created_at DESC."""
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        result = await session.execute(
+            select(SuiteRow).order_by(SuiteRow.created_at.desc())
+        )
+        rows = result.scalars().all()
+        return [
+            {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description,
+                "created_at": r.created_at or "",
+            }
+            for r in rows
+        ]
+
+
+async def list_runs(engine: AsyncEngine, suite_id: str | None = None) -> list[dict]:
+    """Select RunRows LEFT-OUTER-JOINed with SuiteRow, optionally filtered by suite_id."""
+    from sqlalchemy import String
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        stmt = (
+            select(RunRow, SuiteRow.name.label("suite_name"))
+            .outerjoin(SuiteRow, RunRow.suite_id == SuiteRow.id)
+            .order_by(RunRow.started_at.desc())
+        )
+        if suite_id is not None:
+            stmt = stmt.where(RunRow.suite_id == suite_id)
+        result = await session.execute(stmt)
+        rows = result.all()
+        return [
+            {
+                "id": row.RunRow.id,
+                "suite_id": row.RunRow.suite_id,
+                "suite_name": row.suite_name or "",
+                "started_at": row.RunRow.started_at,
+                "finished_at": row.RunRow.finished_at,
+                "status": row.RunRow.status,
+                "overall_score": row.RunRow.overall_score,
+            }
+            for row in rows
+        ]
+
+
 async def get_run(engine: AsyncEngine, run_id: str) -> RunRecord | None:
     """Retrieve a RunRecord from DB by run_id. Span data is plain dicts."""
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
