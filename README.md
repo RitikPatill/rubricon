@@ -7,23 +7,23 @@
 
 ---
 
-## What works (M4 — LLM-as-judge scoring)
+## What works (M5 — FastAPI read API + dashboard shell)
 
 - **Monorepo initialized** with `uv` (Python) and `pnpm` workspaces.
 - **Pydantic domain models** — `Suite`, `Scenario`, `Rubric`, `Criterion`, `Trajectory`, `TrajectorySpan`, `ScenarioResult`, `RunRecord`, `CriterionScore`, `ScenarioScore`.
 - **YAML loader** — `load_suite(path)` validates YAML against Pydantic models with friendly error messages.
 - **SQLAlchemy 2.0 async ORM** — five tables: `suites`, `runs`, `scenario_results`, `trajectory_spans`, `scores`.
-- **Async storage layer** — `persist_run` persists scores alongside spans; `get_run` hydrates `CriterionScore` objects from the `scores` table.
+- **Async storage layer** — `persist_run` persists scores alongside spans; `get_run` hydrates `CriterionScore` objects from the `scores` table. `list_suites` and `list_runs` support the API.
 - **Agent adapter protocol** + `ResearchAgent` — drives a real Anthropic agentic loop with a stubbed `web_search` tool; captures every model call, tool call, tool result, and final output as `TrajectorySpan` objects.
 - **Run engine** — `execute_run` runs all scenarios concurrently; after agent phase completes, a judge phase fires all `judge_criterion` calls concurrently per scenario.
 - **LLM judge** (`rubricon/judge.py`) — `judge_criterion` calls Claude (`claude-haiku-4-5`) with `tool_choice={"type":"any"}` forcing a structured `record_score` tool call; returns `CriterionScore` (1–5 + justification + cited span). Judge errors are caught per-criterion so one bad call never fails the run.
 - **Versioned judge prompts** (`rubricon/prompts/judge_v1.py`) — `PROMPT_VERSION = "v1"` baked into every score; changing the template is visible in snapshot diffs.
 - **Weighted scoring** — `compute_weighted_score` computes `sum(score×weight)/sum(weight)`; per-run `overall_score` is the mean of scenario weighted scores.
-- **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table with `x.xx/5` scores after the judge phase; prints `Overall score: x.xx/5` in the summary. Pass `--no-judge` to skip judging.
+- **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table with `x.xx/5` scores after the judge phase; prints `Overall score: x.xx/5` in the summary. Pass `--no-judge` to skip judging. `rubricon serve` starts the FastAPI server.
+- **FastAPI read-only API** (`rubricon/api.py`) — four endpoints: `GET /suites`, `GET /runs`, `GET /runs/{id}`, `GET /runs/{id}/scenarios/{id}/trajectory`. CORS enabled for `localhost:3000`.
+- **Next.js dashboard** — nav bar (Rubricon / Runs / Suites), runs list page with color-coded scores, run detail page with per-scenario score cards and criterion chips, suites list page.
 - **Example suite** — `backend/examples/research_agent_suite.yaml` (3 scenarios, 2 rubric criteria).
-- **Test suite** — `test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`, `test_judge.py` (7 tests including snapshot test) under `backend/tests/`.
-
-FastAPI server (`M5`) and Next.js dashboard (`M6+`) are not yet implemented.
+- **Test suite** — `test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`, `test_judge.py`, `test_api.py` (9 API tests) under `backend/tests/`.
 
 ---
 
@@ -37,7 +37,7 @@ This catches the failure mode every agent developer has hit: right answer, wrong
 
 ## Demo flow
 
-Steps 1–3 work today. Steps 4–8 require M5/M6 (FastAPI server and Next.js dashboard — not yet implemented).
+Steps 1–5 work today. Steps 6–8 require M6 (trajectory drill-down and diff view — not yet implemented).
 
 1. **Clone and install**
    ```bash
@@ -58,13 +58,18 @@ Steps 1–3 work today. Steps 4–8 require M5/M6 (FastAPI server and Next.js da
    rubricon run examples/research_agent_suite.yaml
    ```
 
-4. *(M5)* **Open the dashboard**
+4. **Open the dashboard**
    ```bash
-   rubricon serve
-   # → http://localhost:3000
+   # Terminal 1 — API server
+   cd backend
+   rubricon serve          # → http://localhost:8000
+
+   # Terminal 2 — Next.js dashboard
+   cd dashboard
+   pnpm dev                # → http://localhost:3000
    ```
 
-5. *(M6)* **Review results** — click the latest run, see overall score 3.6/5, two failing scenarios highlighted in red.
+5. **Review results** — open `http://localhost:3000`; click the latest run, see overall score and per-scenario cards with criterion scores colored green/yellow/red.
 
 6. *(M6)* **Inspect a failure** — click a failing scenario to open the trajectory timeline. Collapsible spans show the agent called `web_search` with a malformed query; the judge's justification quotes that exact span.
 
@@ -132,7 +137,13 @@ rubricon run examples/research_agent_suite.yaml
 ### Start the dashboard
 
 ```bash
-rubricon serve   # not yet implemented — M5
+# Terminal 1 — API server (port 8000)
+cd backend
+rubricon serve
+
+# Terminal 2 — Next.js (port 3000)
+cd dashboard
+pnpm dev
 ```
 
 ---
@@ -180,6 +191,7 @@ rubricon/
 │   │   ├── test_engine.py
 │   │   ├── test_storage.py
 │   │   ├── test_judge.py       # judge unit tests + snapshot test
+│   │   ├── test_api.py         # FastAPI endpoint tests (9 tests)
 │   │   └── snapshots/
 │   │       └── judge_prompt_v1.txt   # locked prompt snapshot
 │   └── rubricon/
@@ -192,14 +204,24 @@ rubricon/
 │       ├── engine.py           # async run orchestrator + judge phase
 │       ├── judge.py            # LLM-as-judge: format/judge/score
 │       ├── cli.py              # Typer CLI: run / serve
+│       ├── api.py              # FastAPI read-only endpoints
 │       └── prompts/
 │           ├── __init__.py
 │           └── judge_v1.py     # versioned judge prompt constants
-├── dashboard/                  # Next.js 14 App Router scaffold
-│   ├── src/app/
-│   │   ├── layout.tsx
-│   │   ├── page.tsx
-│   │   └── globals.css
+├── dashboard/                  # Next.js 14 App Router dashboard
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx          # nav bar (Rubricon / Runs / Suites)
+│   │   │   ├── page.tsx            # redirects → /runs
+│   │   │   ├── runs/
+│   │   │   │   ├── page.tsx        # runs list with score badges
+│   │   │   │   └── [runId]/
+│   │   │   │       └── page.tsx    # run detail + per-scenario score cards
+│   │   │   ├── suites/
+│   │   │   │   └── page.tsx        # suites list
+│   │   │   └── globals.css
+│   │   └── lib/
+│   │       └── api.ts              # typed fetch helpers
 │   ├── tailwind.config.ts
 │   ├── next.config.js
 │   └── package.json
@@ -218,8 +240,8 @@ rubricon/
 - [x] **M2** — Pydantic domain models, YAML suite loader, SQLAlchemy 2.0 async schema (5 tables), async SQLite storage layer
 - [x] **M3** — Agent adapter protocol, `ResearchAgent` (Anthropic agentic loop + trajectory capture), async run engine with concurrency semaphore, Rich CLI, example suite, test suite
 - [x] **M4** — LLM judge with versioned prompts (Claude scores each rubric criterion against trajectory; weighted per-scenario and per-run scores; snapshot tests lock prompt drift)
-- [ ] **M5** — FastAPI read-only server
-- [ ] **M6** — Next.js dashboard (suite list → run detail → trajectory → diff)
+- [x] **M5** — FastAPI read-only API (`/suites`, `/runs`, `/runs/{id}`, `/runs/{id}/scenarios/{id}/trajectory`) + Next.js dashboard shell (runs list, run detail with score cards, suites list)
+- [ ] **M6** — Trajectory drill-down timeline + run diff/compare view
 - **Later**: cost/latency dashboards, OpenAI judge, VS Code extension
 
 ---
