@@ -62,6 +62,22 @@ class Suite(BaseModel):
     rubric: Rubric
 
 
+class CriterionScore(BaseModel):
+    criterion_name: str
+    score: int  # 1–5 (0 on judge error)
+    justification: str
+    cited_span_id: str | None = None
+    passed: bool  # score >= criterion.pass_threshold
+    prompt_version: str = "v1"
+
+
+class ScenarioScore(BaseModel):
+    scenario_id: str
+    criterion_scores: list[CriterionScore]
+    weighted_score: float  # output of compute_weighted_score
+    passed: bool  # all criteria passed
+
+
 class ScenarioResult(BaseModel):
     scenario_id: str
     status: str  # "pass" | "error"
@@ -69,6 +85,8 @@ class ScenarioResult(BaseModel):
     error: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    scores: list[CriterionScore] = []
+    weighted_score: float | None = None
 
 
 class RunRecord(BaseModel):
@@ -77,3 +95,4 @@ class RunRecord(BaseModel):
     started_at: datetime
     finished_at: datetime | None = None
     scenario_results: list[ScenarioResult] = []
+    overall_score: float | None = None  # mean of scenario weighted_scores

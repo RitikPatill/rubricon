@@ -7,20 +7,23 @@
 
 ---
 
-## What works (M3 — run engine + trajectory capture)
+## What works (M4 — LLM-as-judge scoring)
 
 - **Monorepo initialized** with `uv` (Python) and `pnpm` workspaces.
-- **Pydantic domain models** — `Suite`, `Scenario`, `Rubric`, `Criterion`, `Trajectory`, `TrajectorySpan`, `ScenarioResult`, `RunRecord`.
+- **Pydantic domain models** — `Suite`, `Scenario`, `Rubric`, `Criterion`, `Trajectory`, `TrajectorySpan`, `ScenarioResult`, `RunRecord`, `CriterionScore`, `ScenarioScore`.
 - **YAML loader** — `load_suite(path)` validates YAML against Pydantic models with friendly error messages.
-- **SQLAlchemy 2.0 async ORM** — five tables: `suites`, `runs`, `scenario_results`, `trajectory_spans`, `scores` (schema-only for M4).
-- **Async storage layer** — `persist_run` upserts suite + inserts run/results/spans in one transaction; `get_run` retrieves full `RunRecord`.
+- **SQLAlchemy 2.0 async ORM** — five tables: `suites`, `runs`, `scenario_results`, `trajectory_spans`, `scores`.
+- **Async storage layer** — `persist_run` persists scores alongside spans; `get_run` hydrates `CriterionScore` objects from the `scores` table.
 - **Agent adapter protocol** + `ResearchAgent` — drives a real Anthropic agentic loop with a stubbed `web_search` tool; captures every model call, tool call, tool result, and final output as `TrajectorySpan` objects.
-- **Run engine** — `execute_run` runs all scenarios concurrently behind an `asyncio.Semaphore`; one failure never aborts the rest.
-- **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table; prints run ID and pass/fail summary when complete.
+- **Run engine** — `execute_run` runs all scenarios concurrently; after agent phase completes, a judge phase fires all `judge_criterion` calls concurrently per scenario.
+- **LLM judge** (`rubricon/judge.py`) — `judge_criterion` calls Claude (`claude-haiku-4-5`) with `tool_choice={"type":"any"}` forcing a structured `record_score` tool call; returns `CriterionScore` (1–5 + justification + cited span). Judge errors are caught per-criterion so one bad call never fails the run.
+- **Versioned judge prompts** (`rubricon/prompts/judge_v1.py`) — `PROMPT_VERSION = "v1"` baked into every score; changing the template is visible in snapshot diffs.
+- **Weighted scoring** — `compute_weighted_score` computes `sum(score×weight)/sum(weight)`; per-run `overall_score` is the mean of scenario weighted scores.
+- **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table with `x.xx/5` scores after the judge phase; prints `Overall score: x.xx/5` in the summary. Pass `--no-judge` to skip judging.
 - **Example suite** — `backend/examples/research_agent_suite.yaml` (3 scenarios, 2 rubric criteria).
-- **Test suite** — `tests/test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`.
+- **Test suite** — `test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`, `test_judge.py` (7 tests including snapshot test) under `backend/tests/`.
 
-LLM judge scores (`M4`), FastAPI server (`M5`), and Next.js dashboard (`M6+`) are not yet implemented.
+FastAPI server (`M5`) and Next.js dashboard (`M6+`) are not yet implemented.
 
 ---
 
@@ -175,7 +178,10 @@ rubricon/
 │   │   ├── test_models.py
 │   │   ├── test_loader.py
 │   │   ├── test_engine.py
-│   │   └── test_storage.py
+│   │   ├── test_storage.py
+│   │   ├── test_judge.py       # judge unit tests + snapshot test
+│   │   └── snapshots/
+│   │       └── judge_prompt_v1.txt   # locked prompt snapshot
 │   └── rubricon/
 │       ├── __init__.py
 │       ├── models.py           # Pydantic domain models
@@ -183,8 +189,12 @@ rubricon/
 │       ├── schema.py           # SQLAlchemy ORM (5 tables)
 │       ├── storage.py          # async SQLite persist/read
 │       ├── agent.py            # Agent protocol + ResearchAgent
-│       ├── engine.py           # async run orchestrator
-│       └── cli.py              # Typer CLI: run / serve
+│       ├── engine.py           # async run orchestrator + judge phase
+│       ├── judge.py            # LLM-as-judge: format/judge/score
+│       ├── cli.py              # Typer CLI: run / serve
+│       └── prompts/
+│           ├── __init__.py
+│           └── judge_v1.py     # versioned judge prompt constants
 ├── dashboard/                  # Next.js 14 App Router scaffold
 │   ├── src/app/
 │   │   ├── layout.tsx
@@ -207,7 +217,7 @@ rubricon/
 - [x] **M1** — Monorepo scaffold: uv + pnpm workspaces, Typer CLI stub, ruff/prettier pre-commit hooks, MIT license
 - [x] **M2** — Pydantic domain models, YAML suite loader, SQLAlchemy 2.0 async schema (5 tables), async SQLite storage layer
 - [x] **M3** — Agent adapter protocol, `ResearchAgent` (Anthropic agentic loop + trajectory capture), async run engine with concurrency semaphore, Rich CLI, example suite, test suite
-- [ ] **M4** — LLM judge with versioned prompts (Claude scores each rubric criterion against trajectory)
+- [x] **M4** — LLM judge with versioned prompts (Claude scores each rubric criterion against trajectory; weighted per-scenario and per-run scores; snapshot tests lock prompt drift)
 - [ ] **M5** — FastAPI read-only server
 - [ ] **M6** — Next.js dashboard (suite list → run detail → trajectory → diff)
 - **Later**: cost/latency dashboards, OpenAI judge, VS Code extension

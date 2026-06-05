@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from rubricon.models import RunRecord, ScenarioResult, Suite, Trajectory, TrajectorySpan
+from rubricon.models import CriterionScore, RunRecord, ScenarioResult, Suite, Trajectory, TrajectorySpan
 from rubricon.schema import Base, RunRow, ScenarioResultRow, ScoreRow, SuiteRow, TrajectorySpanRow
 
 
@@ -25,7 +25,7 @@ def _dt_str(dt: datetime | None) -> str | None:
 
 
 async def persist_run(engine: AsyncEngine, suite: Suite, run: RunRecord) -> None:
-    """Upsert suite + insert run + results + spans in a single transaction."""
+    """Upsert suite + insert run + results + spans + scores in a single transaction."""
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with session_factory() as session:
@@ -49,10 +49,11 @@ async def persist_run(engine: AsyncEngine, suite: Suite, run: RunRecord) -> None
                 started_at=_dt_str(run.started_at) or "",
                 finished_at=_dt_str(run.finished_at),
                 status="completed",
+                overall_score=run.overall_score,
             )
             session.add(run_row)
 
-            # Insert scenario results + spans
+            # Insert scenario results + spans + scores
             for sr in run.scenario_results:
                 sr_id = uuid.uuid4().hex
                 sr_row = ScenarioResultRow(
@@ -64,6 +65,7 @@ async def persist_run(engine: AsyncEngine, suite: Suite, run: RunRecord) -> None
                     final_output=sr.trajectory.final_output,
                     started_at=_dt_str(sr.started_at),
                     finished_at=_dt_str(sr.finished_at),
+                    weighted_score=sr.weighted_score,
                 )
                 session.add(sr_row)
 
@@ -77,6 +79,18 @@ async def persist_run(engine: AsyncEngine, suite: Suite, run: RunRecord) -> None
                         data_json=span.data,  # JSON column handles serialization
                     )
                     session.add(span_row)
+
+                for cs in sr.scores:
+                    score_row = ScoreRow(
+                        id=uuid.uuid4().hex,
+                        scenario_result_id=sr_id,
+                        criterion_name=cs.criterion_name,
+                        score=cs.score,
+                        justification=cs.justification,
+                        cited_span_id=cs.cited_span_id,
+                        prompt_version=cs.prompt_version,
+                    )
+                    session.add(score_row)
 
 
 async def get_run(engine: AsyncEngine, run_id: str) -> RunRecord | None:
@@ -95,6 +109,12 @@ async def get_run(engine: AsyncEngine, run_id: str) -> RunRecord | None:
             select(SuiteRow).where(SuiteRow.id == run_row.suite_id)
         )
         suite_row = suite_result.scalar_one_or_none()
+
+        # Build per-criterion pass_threshold map from stored suite JSON
+        criterion_thresholds: dict[str, int] = {}
+        if suite_row:
+            stored_suite = Suite.model_validate_json(suite_row.yaml_content)
+            criterion_thresholds = {c.name: c.pass_threshold for c in stored_suite.rubric.criteria}
 
         sr_result = await session.execute(
             select(ScenarioResultRow).where(ScenarioResultRow.run_id == run_id)
@@ -122,6 +142,23 @@ async def get_run(engine: AsyncEngine, run_id: str) -> RunRecord | None:
                     )
                 )
 
+            # Hydrate scores
+            score_result = await session.execute(
+                select(ScoreRow).where(ScoreRow.scenario_result_id == sr_row.id)
+            )
+            score_rows = score_result.scalars().all()
+            criterion_scores = [
+                CriterionScore(
+                    criterion_name=sc.criterion_name,
+                    score=sc.score or 0,
+                    justification=sc.justification or "",
+                    cited_span_id=sc.cited_span_id,
+                    passed=(sc.score or 0) >= criterion_thresholds.get(sc.criterion_name, 3),
+                    prompt_version=sc.prompt_version or "v1",
+                )
+                for sc in score_rows
+            ]
+
             trajectory = Trajectory(spans=spans, final_output=sr_row.final_output)
             scenario_results.append(
                 ScenarioResult(
@@ -131,6 +168,8 @@ async def get_run(engine: AsyncEngine, run_id: str) -> RunRecord | None:
                     error=sr_row.error,
                     started_at=datetime.fromisoformat(sr_row.started_at) if sr_row.started_at else None,
                     finished_at=datetime.fromisoformat(sr_row.finished_at) if sr_row.finished_at else None,
+                    scores=criterion_scores,
+                    weighted_score=sr_row.weighted_score,
                 )
             )
 
@@ -140,4 +179,5 @@ async def get_run(engine: AsyncEngine, run_id: str) -> RunRecord | None:
             started_at=datetime.fromisoformat(run_row.started_at),
             finished_at=datetime.fromisoformat(run_row.finished_at) if run_row.finished_at else None,
             scenario_results=scenario_results,
+            overall_score=run_row.overall_score,
         )
