@@ -69,11 +69,19 @@ export default async function RunDetailPage({
                   {sr.status}
                 </span>
               </div>
-              <span className="text-sm text-gray-600">
-                {sr.weighted_score !== null
-                  ? `${sr.weighted_score.toFixed(2)}/5`
-                  : '—'}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">
+                  {sr.weighted_score !== null
+                    ? `${sr.weighted_score.toFixed(2)}/5`
+                    : '—'}
+                </span>
+                <Link
+                  href={`/runs/${params.runId}/scenarios/${sr.scenario_id}`}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Timeline →
+                </Link>
+              </div>
             </div>
             {sr.scores.length > 0 && (
               <div className="space-y-2">
@@ -91,9 +99,18 @@ export default async function RunDetailPage({
                       title={cs.passed ? 'passed' : 'failed'}
                     />
                     <span className="font-medium text-gray-700">{cs.criterion_name}</span>
-                    <span className="text-gray-500 text-xs leading-relaxed">
-                      {cs.justification}
-                    </span>
+                    {cs.cited_span_id ? (
+                      <Link
+                        href={`/runs/${params.runId}/scenarios/${sr.scenario_id}?highlight=${cs.cited_span_id}`}
+                        className="text-gray-500 text-xs leading-relaxed hover:text-blue-700 hover:underline"
+                      >
+                        {cs.justification}
+                      </Link>
+                    ) : (
+                      <span className="text-gray-500 text-xs leading-relaxed">
+                        {cs.justification}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
