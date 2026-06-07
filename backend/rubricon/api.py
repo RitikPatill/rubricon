@@ -83,6 +83,32 @@ class TrajectoryOut(BaseModel):
     final_output: str | None
 
 
+class CriterionDiff(BaseModel):
+    criterion_name: str
+    score_a: float | None
+    score_b: float | None
+    delta: float | None
+    passed_a: bool | None
+    passed_b: bool | None
+
+
+class ScenarioDiff(BaseModel):
+    scenario_id: str
+    score_a: float | None
+    score_b: float | None
+    delta: float | None
+    status_a: str
+    status_b: str
+    criteria: list[CriterionDiff]
+
+
+class RunCompareResult(BaseModel):
+    run_a: RunSummary
+    run_b: RunSummary
+    overall_delta: float | None
+    scenarios: list[ScenarioDiff]
+
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -142,6 +168,89 @@ def create_app(db_path: str = "rubricon.db") -> FastAPI:
                 )
                 for sr in record.scenario_results
             ],
+        )
+
+    @app.get("/compare", response_model=RunCompareResult)
+    async def compare_runs(run_a: str, run_b: str) -> RunCompareResult:
+        record_a = await get_run(_state["engine"], run_a)
+        record_b = await get_run(_state["engine"], run_b)
+        if record_a is None or record_b is None:
+            raise HTTPException(status_code=404, detail="One or both runs not found")
+
+        runs_map = await list_runs(_state["engine"])
+        runs_by_id = {r["id"]: r for r in runs_map}
+
+        def _run_summary(record_id: str) -> RunSummary:
+            r = runs_by_id[record_id]
+            return RunSummary(
+                id=r["id"],
+                suite_id=r["suite_id"],
+                suite_name=r["suite_name"],
+                started_at=r["started_at"],
+                finished_at=r["finished_at"],
+                status=r["status"],
+                overall_score=r["overall_score"],
+            )
+
+        summary_a = _run_summary(run_a)
+        summary_b = _run_summary(run_b)
+
+        # Build per-scenario index for each run
+        scenarios_a = {sr.scenario_id: sr for sr in record_a.scenario_results}
+        scenarios_b = {sr.scenario_id: sr for sr in record_b.scenario_results}
+        all_scenario_ids = sorted(set(scenarios_a) | set(scenarios_b))
+
+        scenario_diffs: list[ScenarioDiff] = []
+        for sid in all_scenario_ids:
+            sr_a = scenarios_a.get(sid)
+            sr_b = scenarios_b.get(sid)
+
+            score_a = sr_a.weighted_score if sr_a else None
+            score_b = sr_b.weighted_score if sr_b else None
+            delta = (score_b - score_a) if (score_a is not None and score_b is not None) else None
+            status_a = sr_a.status if sr_a else "missing"
+            status_b = sr_b.status if sr_b else "missing"
+
+            # Build per-criterion index
+            criteria_a = {cs.criterion_name: cs for cs in sr_a.scores} if sr_a else {}
+            criteria_b = {cs.criterion_name: cs for cs in sr_b.scores} if sr_b else {}
+            all_criteria = sorted(set(criteria_a) | set(criteria_b))
+
+            criterion_diffs: list[CriterionDiff] = []
+            for cname in all_criteria:
+                cs_a = criteria_a.get(cname)
+                cs_b = criteria_b.get(cname)
+                c_score_a = float(cs_a.score) if cs_a else None
+                c_score_b = float(cs_b.score) if cs_b else None
+                c_delta = (c_score_b - c_score_a) if (c_score_a is not None and c_score_b is not None) else None
+                criterion_diffs.append(CriterionDiff(
+                    criterion_name=cname,
+                    score_a=c_score_a,
+                    score_b=c_score_b,
+                    delta=c_delta,
+                    passed_a=cs_a.passed if cs_a else None,
+                    passed_b=cs_b.passed if cs_b else None,
+                ))
+
+            scenario_diffs.append(ScenarioDiff(
+                scenario_id=sid,
+                score_a=score_a,
+                score_b=score_b,
+                delta=delta,
+                status_a=status_a,
+                status_b=status_b,
+                criteria=criterion_diffs,
+            ))
+
+        overall_a = summary_a.overall_score
+        overall_b = summary_b.overall_score
+        overall_delta = (overall_b - overall_a) if (overall_a is not None and overall_b is not None) else None
+
+        return RunCompareResult(
+            run_a=summary_a,
+            run_b=summary_b,
+            overall_delta=overall_delta,
+            scenarios=scenario_diffs,
         )
 
     @app.get(

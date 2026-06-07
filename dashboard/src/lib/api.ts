@@ -54,6 +54,32 @@ export interface TrajectoryOut {
   final_output: string | null;
 }
 
+export interface CriterionDiff {
+  criterion_name: string;
+  score_a: number | null;
+  score_b: number | null;
+  delta: number | null;
+  passed_a: boolean | null;
+  passed_b: boolean | null;
+}
+
+export interface ScenarioDiff {
+  scenario_id: string;
+  score_a: number | null;
+  score_b: number | null;
+  delta: number | null;
+  status_a: string;
+  status_b: string;
+  criteria: CriterionDiff[];
+}
+
+export interface RunCompareResult {
+  run_a: RunSummary;
+  run_b: RunSummary;
+  overall_delta: number | null;
+  scenarios: ScenarioDiff[];
+}
+
 export async function getSuites(): Promise<SuiteSummary[]> {
   const res = await fetch(`${BASE}/suites`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to fetch suites: ${res.status}`);
@@ -70,6 +96,12 @@ export async function getRuns(suiteId?: string): Promise<RunSummary[]> {
 export async function getRun(runId: string): Promise<RunDetail> {
   const res = await fetch(`${BASE}/runs/${runId}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to fetch run ${runId}: ${res.status}`);
+  return res.json();
+}
+
+export async function getComparison(runA: string, runB: string): Promise<RunCompareResult> {
+  const res = await fetch(`${BASE}/compare?run_a=${runA}&run_b=${runB}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`compare fetch failed: ${res.status}`);
   return res.json();
 }
 

@@ -133,6 +133,125 @@ def run(
 
 
 @app.command()
+def compare(
+    run_a: str = typer.Argument(..., help="First run ID (baseline)"),
+    run_b: str = typer.Argument(..., help="Second run ID (new)"),
+    db: str = typer.Option("rubricon.db", "--db", help="Path to SQLite database"),
+) -> None:
+    """Compare two runs side-by-side: overall delta, per-scenario and per-criterion diffs."""
+    from rubricon.storage import get_engine, get_run
+
+    async def _fetch(run_id: str):
+        engine = await get_engine(db)
+        try:
+            return await get_run(engine, run_id)
+        finally:
+            await engine.dispose()
+
+    record_a = asyncio.run(_fetch(run_a))
+    if record_a is None:
+        console.print(f"[red]Run not found: {run_a}[/red]")
+        raise typer.Exit(1)
+
+    record_b = asyncio.run(_fetch(run_b))
+    if record_b is None:
+        console.print(f"[red]Run not found: {run_b}[/red]")
+        raise typer.Exit(1)
+
+    # Overall summary
+    score_a = record_a.overall_score
+    score_b = record_b.overall_score
+    if score_a is not None and score_b is not None:
+        delta = score_b - score_a
+        delta_str = f"[green]+{delta:.2f}[/green]" if delta > 0.1 else (f"[red]{delta:.2f}[/red]" if delta < -0.1 else f"{delta:.2f}")
+    else:
+        delta_str = "—"
+
+    header = Table(title="Overall Comparison", expand=False)
+    header.add_column("Run", style="cyan")
+    header.add_column("Score", justify="right")
+    header.add_column("Delta", justify="right")
+    header.add_row(f"A  {run_a[:12]}", f"{score_a:.2f}/5" if score_a is not None else "—", "")
+    header.add_row(f"B  {run_b[:12]}", f"{score_b:.2f}/5" if score_b is not None else "—", delta_str)
+    console.print(header)
+    console.print()
+
+    # Per-scenario table
+    scenarios_a = {sr.scenario_id: sr for sr in record_a.scenario_results}
+    scenarios_b = {sr.scenario_id: sr for sr in record_b.scenario_results}
+    all_ids = sorted(set(scenarios_a) | set(scenarios_b))
+
+    scenario_table = Table(title="Per-Scenario Diff", expand=True)
+    scenario_table.add_column("Scenario", style="cyan", no_wrap=True)
+    scenario_table.add_column("Score A", justify="right")
+    scenario_table.add_column("Score B", justify="right")
+    scenario_table.add_column("Delta", justify="right")
+
+    for sid in all_ids:
+        sr_a = scenarios_a.get(sid)
+        sr_b = scenarios_b.get(sid)
+        s_a = sr_a.weighted_score if sr_a else None
+        s_b = sr_b.weighted_score if sr_b else None
+        if s_a is not None and s_b is not None:
+            d = s_b - s_a
+            d_str = f"[green]+{d:.2f}[/green]" if d > 0.1 else (f"[red]{d:.2f}[/red]" if d < -0.1 else f"{d:.2f}")
+        else:
+            d_str = "—"
+        scenario_table.add_row(
+            sid,
+            f"{s_a:.2f}" if s_a is not None else "[dim]missing[/dim]",
+            f"{s_b:.2f}" if s_b is not None else "[dim]missing[/dim]",
+            d_str,
+        )
+    console.print(scenario_table)
+    console.print()
+
+    # Per-criterion breakdown for changed scenarios
+    for sid in all_ids:
+        sr_a = scenarios_a.get(sid)
+        sr_b = scenarios_b.get(sid)
+        s_a = sr_a.weighted_score if sr_a else None
+        s_b = sr_b.weighted_score if sr_b else None
+        if s_a is None or s_b is None or abs(s_b - s_a) <= 0.1:
+            continue
+
+        crit_a = {cs.criterion_name: cs for cs in sr_a.scores} if sr_a else {}
+        crit_b = {cs.criterion_name: cs for cs in sr_b.scores} if sr_b else {}
+        all_crit = sorted(set(crit_a) | set(crit_b))
+
+        crit_table = Table(title=f"Criteria — {sid}", expand=True)
+        crit_table.add_column("Criterion", style="cyan")
+        crit_table.add_column("Score A", justify="right")
+        crit_table.add_column("Score B", justify="right")
+        crit_table.add_column("Delta", justify="right")
+        crit_table.add_column("Pass A", justify="center")
+        crit_table.add_column("Pass B", justify="center")
+
+        for cname in all_crit:
+            cs_a = crit_a.get(cname)
+            cs_b = crit_b.get(cname)
+            c_a = float(cs_a.score) if cs_a else None
+            c_b = float(cs_b.score) if cs_b else None
+            if c_a is not None and c_b is not None:
+                cd = c_b - c_a
+                cd_str = f"[green]+{cd:.1f}[/green]" if cd > 0.1 else (f"[red]{cd:.1f}[/red]" if cd < -0.1 else f"{cd:.1f}")
+            else:
+                cd_str = "—"
+            pass_a = ("[green]✓[/green]" if cs_a.passed else "[red]✗[/red]") if cs_a else "—"
+            pass_b = ("[green]✓[/green]" if cs_b.passed else "[red]✗[/red]") if cs_b else "—"
+            crit_table.add_row(
+                cname,
+                f"{c_a:.1f}" if c_a is not None else "[dim]—[/dim]",
+                f"{c_b:.1f}" if c_b is not None else "[dim]—[/dim]",
+                cd_str,
+                pass_a,
+                pass_b,
+            )
+        console.print(crit_table)
+        console.print()
+
+
+@app.command()
 def serve(
     db: str = typer.Option("rubricon.db", "--db", help="Path to SQLite database"),
     host: str = typer.Option("127.0.0.1", "--host"),
