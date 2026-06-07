@@ -7,7 +7,7 @@
 
 ---
 
-## What works (M6 — trajectory timeline view)
+## What works (M7 — run comparison view)
 
 - **Monorepo initialized** with `uv` (Python) and `pnpm` workspaces.
 - **Pydantic domain models** — `Suite`, `Scenario`, `Rubric`, `Criterion`, `Trajectory`, `TrajectorySpan`, `ScenarioResult`, `RunRecord`, `CriterionScore`, `ScenarioScore`.
@@ -19,13 +19,17 @@
 - **LLM judge** (`rubricon/judge.py`) — `judge_criterion` calls Claude (`claude-haiku-4-5`) with `tool_choice={"type":"any"}` forcing a structured `record_score` tool call; returns `CriterionScore` (1–5 + justification + cited span). Judge errors are caught per-criterion so one bad call never fails the run.
 - **Versioned judge prompts** (`rubricon/prompts/judge_v1.py`) — `PROMPT_VERSION = "v1"` baked into every score; changing the template is visible in snapshot diffs.
 - **Weighted scoring** — `compute_weighted_score` computes `sum(score×weight)/sum(weight)`; per-run `overall_score` is the mean of scenario weighted scores.
-- **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table with `x.xx/5` scores after the judge phase; prints `Overall score: x.xx/5` in the summary. Pass `--no-judge` to skip judging. `rubricon serve` starts the FastAPI server.
-- **FastAPI read-only API** (`rubricon/api.py`) — four endpoints: `GET /suites`, `GET /runs`, `GET /runs/{id}`, `GET /runs/{id}/scenarios/{id}/trajectory`. CORS enabled for `localhost:3000`.
-- **Next.js dashboard** — nav bar (Rubricon / Runs / Suites), runs list page with color-coded scores, run detail page with per-scenario score cards and criterion chips, suites list page.
+- **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table with `x.xx/5` scores after the judge phase; prints `Overall score: x.xx/5` in the summary. Pass `--no-judge` to skip judging. `rubricon serve` starts the FastAPI server. `rubricon compare <run_a> <run_b>` prints a Rich diff table.
+- **FastAPI read-only API** (`rubricon/api.py`) — five endpoints: `GET /suites`, `GET /runs`, `GET /runs/{id}`, `GET /runs/{id}/scenarios/{id}/trajectory`, `GET /compare?run_a={id}&run_b={id}`. CORS enabled for `localhost:3000`.
+- **Next.js dashboard** — nav bar (Rubricon / Runs / Suites), runs list page with color-coded scores and run-selection checkboxes, run detail page with per-scenario score cards and criterion chips, suites list page, compare page (`/compare`).
 - **Trajectory timeline** — collapsible span-by-span view of every agent trajectory at `/runs/{id}/scenarios/{id}`; spans color-coded by type (model call → blue, tool call → amber, tool result → green, final output → violet); token counts and latency per span; clicking a criterion justification with a `cited_span_id` highlights and scrolls to the referenced span. Highlight state is URL-shareable via `?highlight={spanId}`.
 - **Timeline links** — "Timeline →" link on each scenario card in the run detail page; criterion justifications with cited spans link directly to the pre-highlighted timeline.
 - **Example suite** — `backend/examples/research_agent_suite.yaml` (3 scenarios, 2 rubric criteria).
-- **Test suite** — `test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`, `test_judge.py`, `test_api.py` (9 API tests) under `backend/tests/`.
+- **Run comparison** — `GET /compare?run_a={id}&run_b={id}` returns structured diff: overall-score delta, per-scenario delta, per-criterion delta with pass indicators. Regressions and improvements are flagged with sign and colour.
+- **Compare dashboard** — `/compare?run_a=...&run_b=...` renders the diff with green highlights for improvements (Δ > 0.1) and red for regressions (Δ < −0.1). Clicking a scenario row expands per-criterion breakdown inline.
+- **Runs-list compare selector** — checkboxes on the runs list let you select exactly 2 runs; a sticky "Compare selected runs →" button navigates to the compare page.
+- **`rubricon compare <run_a> <run_b>` CLI** — prints Rich tables: overall header, per-scenario table with coloured deltas, and per-criterion breakdowns for changed scenarios.
+- **Test suite** — `test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`, `test_judge.py`, `test_api.py` (12 API tests, 3 new compare tests) under `backend/tests/`.
 
 ---
 
@@ -39,7 +43,7 @@ This catches the failure mode every agent developer has hit: right answer, wrong
 
 ## Demo flow
 
-Steps 1–6 work today. Step 7 (run diff/compare) is roadmap.
+Steps 1–8 work today.
 
 1. **Clone and install**
    ```bash
@@ -77,7 +81,10 @@ Steps 1–6 work today. Step 7 (run diff/compare) is roadmap.
 
 7. **Tweak your agent** — edit the system prompt, re-run the suite.
 
-8. *(roadmap)* **Compare runs** — diff two runs side-by-side.
+8. **Compare runs** — on the runs list, check two runs and click **Compare selected runs →**; the compare page shows overall delta, per-scenario deltas (green = improvement, red = regression), and expandable per-criterion rows. Or from the CLI:
+   ```bash
+   rubricon compare <run_a_id> <run_b_id>
+   ```
 
 ---
 
@@ -215,8 +222,10 @@ rubricon/
 │   │   ├── app/
 │   │   │   ├── layout.tsx          # nav bar (Rubricon / Runs / Suites)
 │   │   │   ├── page.tsx            # redirects → /runs
+│   │   │   ├── compare/
+│   │   │   │   └── page.tsx        # run comparison page
 │   │   │   ├── runs/
-│   │   │   │   ├── page.tsx        # runs list with score badges
+│   │   │   │   ├── page.tsx        # runs list (server shell → RunsListClient)
 │   │   │   │   └── [runId]/
 │   │   │   │       ├── page.tsx    # run detail + per-scenario score cards
 │   │   │   │       └── scenarios/
@@ -226,6 +235,8 @@ rubricon/
 │   │   │   │   └── page.tsx        # suites list
 │   │   │   └── globals.css
 │   │   ├── components/
+│   │   │   ├── CompareView.tsx           # compare diff table with expand/collapse
+│   │   │   ├── RunsListClient.tsx        # runs table with checkboxes + compare button
 │   │   │   ├── ScenarioDetailClient.tsx  # two-panel layout; highlight state
 │   │   │   └── TrajectoryTimeline.tsx    # collapsible span cards
 │   │   └── lib/
@@ -250,7 +261,7 @@ rubricon/
 - [x] **M4** — LLM judge with versioned prompts (Claude scores each rubric criterion against trajectory; weighted per-scenario and per-run scores; snapshot tests lock prompt drift)
 - [x] **M5** — FastAPI read-only API (`/suites`, `/runs`, `/runs/{id}`, `/runs/{id}/scenarios/{id}/trajectory`) + Next.js dashboard shell (runs list, run detail with score cards, suites list)
 - [x] **M6** — Trajectory timeline view: collapsible span cards, criterion→span highlight linking, URL-shareable highlight state via `?highlight=`
-- [ ] **M7** — Run diff/compare view
+- [x] **M7** — Run diff/compare view: `GET /compare` endpoint, `/compare` dashboard page with green/red delta chips, runs-list checkboxes + sticky compare button, `rubricon compare` CLI command
 - **Later**: cost/latency dashboards, OpenAI judge, VS Code extension
 
 ---
