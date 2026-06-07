@@ -1,18 +1,46 @@
 name: research_agent_suite
-description: Reference suite for the stub research agent
+description: Reference suite for the stub research agent — 8 scenarios, ~5 pass / ~3 fail
 scenarios:
-  - id: capital_cities
-    description: Simple factual lookup
+  - id: capital_of_france
+    description: Simple factual lookup — expected pass
     input: "What is the capital of France?"
     ground_truth: "Paris"
-  - id: multi_step
-    description: Requires multiple tool calls
-    input: "Find the population of Tokyo and compare it to London."
+
+  - id: telephone_inventor
+    description: Single-step factual — expected pass
+    input: "Who invented the telephone?"
+    ground_truth: "Alexander Graham Bell"
+
+  - id: moon_landing_year
+    description: Unambiguous historical fact — expected pass
+    input: "In what year did humans first land on the Moon?"
+    ground_truth: "1969"
+
+  - id: simple_percentage
+    description: Arithmetic with reasoning — expected pass
+    input: "What is 15 percent of 200? Show your work."
+    ground_truth: "30"
+
+  - id: tokyo_london_ratio
+    description: Multi-step population lookup and ratio — partial pass
+    input: "Find the current population of Tokyo and London. What is the ratio of Tokyo's population to London's?"
     ground_truth: null
-  - id: nonsense_query
-    description: Edge case with an unanswerable query
-    input: "What is the sound of one hand clapping (search for it)?"
+
+  - id: gdp_ranking
+    description: Three tool calls plus synthesis — partial/fail
+    input: "Search for the GDP of Germany, Japan, and India, then rank them highest to lowest."
     ground_truth: null
+
+  - id: g7_summit_outcomes
+    description: Current-events query stub cannot satisfy — expected fail
+    input: "What were the main outcomes of the most recent G7 summit?"
+    ground_truth: null
+
+  - id: nonsense_search
+    description: Malformed domain tests tool-use quality on bad input — expected fail
+    input: "Search for the term 'zxqwerty flarbnik' and tell me the most relevant result."
+    ground_truth: null
+
 rubric:
   criteria:
     - name: correctness
@@ -25,6 +53,7 @@ rubric:
         4: "Answer is mostly correct"
         5: "Answer is completely correct"
       pass_threshold: 3
+
     - name: tool_use_quality
       description: Did the agent use tools effectively?
       weight: 1.0
@@ -35,3 +64,14 @@ rubric:
         4: "Tools used well"
         5: "Tools used optimally with precise queries"
       pass_threshold: 2
+
+    - name: reasoning_coherence
+      description: Does the agent's reasoning follow clearly from the evidence retrieved?
+      weight: 1.5
+      descriptors:
+        1: "No reasoning shown; answer appears without explanation"
+        2: "Reasoning is present but flawed or circular"
+        3: "Reasoning is adequate and mostly follows from the evidence"
+        4: "Reasoning is clear and well-supported by retrieved data"
+        5: "Reasoning is exemplary: explicit chain-of-thought with evidence cited"
+      pass_threshold: 3

@@ -7,7 +7,7 @@
 
 ---
 
-## What works (M7 — run comparison view)
+## What works (M8 — demo + screenshots)
 
 - **Monorepo initialized** with `uv` (Python) and `pnpm` workspaces.
 - **Pydantic domain models** — `Suite`, `Scenario`, `Rubric`, `Criterion`, `Trajectory`, `TrajectorySpan`, `ScenarioResult`, `RunRecord`, `CriterionScore`, `ScenarioScore`.
@@ -24,12 +24,14 @@
 - **Next.js dashboard** — nav bar (Rubricon / Runs / Suites), runs list page with color-coded scores and run-selection checkboxes, run detail page with per-scenario score cards and criterion chips, suites list page, compare page (`/compare`).
 - **Trajectory timeline** — collapsible span-by-span view of every agent trajectory at `/runs/{id}/scenarios/{id}`; spans color-coded by type (model call → blue, tool call → amber, tool result → green, final output → violet); token counts and latency per span; clicking a criterion justification with a `cited_span_id` highlights and scrolls to the referenced span. Highlight state is URL-shareable via `?highlight={spanId}`.
 - **Timeline links** — "Timeline →" link on each scenario card in the run detail page; criterion justifications with cited spans link directly to the pre-highlighted timeline.
-- **Example suite** — `backend/examples/research_agent_suite.yaml` (3 scenarios, 2 rubric criteria).
+- **Example suite** — `backend/examples/research_agent_suite.yaml` (8 scenarios, 3 rubric criteria: `correctness`, `tool_use_quality`, `reasoning_coherence`). Designed for ~5 pass / ~3 fail against the stub agent.
 - **Run comparison** — `GET /compare?run_a={id}&run_b={id}` returns structured diff: overall-score delta, per-scenario delta, per-criterion delta with pass indicators. Regressions and improvements are flagged with sign and colour.
 - **Compare dashboard** — `/compare?run_a=...&run_b=...` renders the diff with green highlights for improvements (Δ > 0.1) and red for regressions (Δ < −0.1). Clicking a scenario row expands per-criterion breakdown inline.
 - **Runs-list compare selector** — checkboxes on the runs list let you select exactly 2 runs; a sticky "Compare selected runs →" button navigates to the compare page.
 - **`rubricon compare <run_a> <run_b>` CLI** — prints Rich tables: overall header, per-scenario table with coloured deltas, and per-criterion breakdowns for changed scenarios.
 - **Test suite** — `test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`, `test_judge.py`, `test_api.py` (12 API tests, 3 new compare tests) under `backend/tests/`.
+- **Demo assets** — `docs/screenshot.png` and `docs/comparison.png` (placeholder 1×1 PNGs; run `rubricon serve` and capture to regenerate), `docs/demo.gif` (placeholder).
+- **`record_demo.sh`** — runs the 8-scenario suite end-to-end, starts the API server in background, and prints both URLs. Run with `bash record_demo.sh`.
 
 ---
 
@@ -193,14 +195,14 @@ rubricon/
 │   ├── pyproject.toml          # dependencies, ruff config, pytest config
 │   ├── uv.lock
 │   ├── examples/
-│   │   └── research_agent_suite.yaml   # 3-scenario reference suite
+│   │   └── research_agent_suite.yaml   # 8-scenario reference suite (3 criteria)
 │   ├── tests/
 │   │   ├── test_models.py
 │   │   ├── test_loader.py
 │   │   ├── test_engine.py
 │   │   ├── test_storage.py
 │   │   ├── test_judge.py       # judge unit tests + snapshot test
-│   │   ├── test_api.py         # FastAPI endpoint tests (9 tests)
+│   │   ├── test_api.py         # FastAPI endpoint tests (15 tests, incl. 3 compare)
 │   │   └── snapshots/
 │   │       └── judge_prompt_v1.txt   # locked prompt snapshot
 │   └── rubricon/
@@ -244,6 +246,11 @@ rubricon/
 │   ├── tailwind.config.ts
 │   ├── next.config.js
 │   └── package.json
+├── docs/
+│   ├── screenshot.png          # dashboard run-detail screenshot (placeholder)
+│   ├── comparison.png          # diff view screenshot (placeholder)
+│   └── demo.gif                # animated demo (placeholder)
+├── record_demo.sh              # run suite + start server + print URLs
 ├── .gitignore
 ├── .pre-commit-config.yaml     # ruff (Python) + prettier (TS/YAML)
 ├── LICENSE
@@ -262,6 +269,7 @@ rubricon/
 - [x] **M5** — FastAPI read-only API (`/suites`, `/runs`, `/runs/{id}`, `/runs/{id}/scenarios/{id}/trajectory`) + Next.js dashboard shell (runs list, run detail with score cards, suites list)
 - [x] **M6** — Trajectory timeline view: collapsible span cards, criterion→span highlight linking, URL-shareable highlight state via `?highlight=`
 - [x] **M7** — Run diff/compare view: `GET /compare` endpoint, `/compare` dashboard page with green/red delta chips, runs-list checkboxes + sticky compare button, `rubricon compare` CLI command
+- [x] **M8** — Demo polish: 8-scenario example suite (3 criteria, ~5 pass / ~3 fail), placeholder screenshots in `docs/`, `record_demo.sh` automation script
 - **Later**: cost/latency dashboards, OpenAI judge, VS Code extension
 
 ---
