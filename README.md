@@ -7,7 +7,7 @@
 
 ---
 
-## What works (M5 — FastAPI read API + dashboard shell)
+## What works (M6 — trajectory timeline view)
 
 - **Monorepo initialized** with `uv` (Python) and `pnpm` workspaces.
 - **Pydantic domain models** — `Suite`, `Scenario`, `Rubric`, `Criterion`, `Trajectory`, `TrajectorySpan`, `ScenarioResult`, `RunRecord`, `CriterionScore`, `ScenarioScore`.
@@ -22,6 +22,8 @@
 - **CLI** — `rubricon run <suite.yaml>` streams a Rich live progress table with `x.xx/5` scores after the judge phase; prints `Overall score: x.xx/5` in the summary. Pass `--no-judge` to skip judging. `rubricon serve` starts the FastAPI server.
 - **FastAPI read-only API** (`rubricon/api.py`) — four endpoints: `GET /suites`, `GET /runs`, `GET /runs/{id}`, `GET /runs/{id}/scenarios/{id}/trajectory`. CORS enabled for `localhost:3000`.
 - **Next.js dashboard** — nav bar (Rubricon / Runs / Suites), runs list page with color-coded scores, run detail page with per-scenario score cards and criterion chips, suites list page.
+- **Trajectory timeline** — collapsible span-by-span view of every agent trajectory at `/runs/{id}/scenarios/{id}`; spans color-coded by type (model call → blue, tool call → amber, tool result → green, final output → violet); token counts and latency per span; clicking a criterion justification with a `cited_span_id` highlights and scrolls to the referenced span. Highlight state is URL-shareable via `?highlight={spanId}`.
+- **Timeline links** — "Timeline →" link on each scenario card in the run detail page; criterion justifications with cited spans link directly to the pre-highlighted timeline.
 - **Example suite** — `backend/examples/research_agent_suite.yaml` (3 scenarios, 2 rubric criteria).
 - **Test suite** — `test_models.py`, `test_loader.py`, `test_engine.py`, `test_storage.py`, `test_judge.py`, `test_api.py` (9 API tests) under `backend/tests/`.
 
@@ -37,7 +39,7 @@ This catches the failure mode every agent developer has hit: right answer, wrong
 
 ## Demo flow
 
-Steps 1–5 work today. Steps 6–8 require M6 (trajectory drill-down and diff view — not yet implemented).
+Steps 1–6 work today. Step 7 (run diff/compare) is roadmap.
 
 1. **Clone and install**
    ```bash
@@ -71,11 +73,11 @@ Steps 1–5 work today. Steps 6–8 require M6 (trajectory drill-down and diff v
 
 5. **Review results** — open `http://localhost:3000`; click the latest run, see overall score and per-scenario cards with criterion scores colored green/yellow/red.
 
-6. *(M6)* **Inspect a failure** — click a failing scenario to open the trajectory timeline. Collapsible spans show the agent called `web_search` with a malformed query; the judge's justification quotes that exact span.
+6. **Inspect a failure** — click "Timeline →" on a failing scenario card. The trajectory timeline opens showing collapsible spans: model calls with token counts, tool calls with input JSON, tool results with output. Click a criterion justification to highlight and scroll to the cited span. The `?highlight=` search param makes the view URL-shareable.
 
 7. **Tweak your agent** — edit the system prompt, re-run the suite.
 
-8. *(M6)* **Compare runs** — hit **Compare** in the dashboard to diff two runs side-by-side: which scenarios moved, which criteria moved, regressions flagged in red.
+8. *(roadmap)* **Compare runs** — diff two runs side-by-side.
 
 ---
 
@@ -216,10 +218,16 @@ rubricon/
 │   │   │   ├── runs/
 │   │   │   │   ├── page.tsx        # runs list with score badges
 │   │   │   │   └── [runId]/
-│   │   │   │       └── page.tsx    # run detail + per-scenario score cards
+│   │   │   │       ├── page.tsx    # run detail + per-scenario score cards
+│   │   │   │       └── scenarios/
+│   │   │   │           └── [scenarioId]/
+│   │   │   │               └── page.tsx  # trajectory timeline + criteria panel
 │   │   │   ├── suites/
 │   │   │   │   └── page.tsx        # suites list
 │   │   │   └── globals.css
+│   │   ├── components/
+│   │   │   ├── ScenarioDetailClient.tsx  # two-panel layout; highlight state
+│   │   │   └── TrajectoryTimeline.tsx    # collapsible span cards
 │   │   └── lib/
 │   │       └── api.ts              # typed fetch helpers
 │   ├── tailwind.config.ts
@@ -241,7 +249,8 @@ rubricon/
 - [x] **M3** — Agent adapter protocol, `ResearchAgent` (Anthropic agentic loop + trajectory capture), async run engine with concurrency semaphore, Rich CLI, example suite, test suite
 - [x] **M4** — LLM judge with versioned prompts (Claude scores each rubric criterion against trajectory; weighted per-scenario and per-run scores; snapshot tests lock prompt drift)
 - [x] **M5** — FastAPI read-only API (`/suites`, `/runs`, `/runs/{id}`, `/runs/{id}/scenarios/{id}/trajectory`) + Next.js dashboard shell (runs list, run detail with score cards, suites list)
-- [ ] **M6** — Trajectory drill-down timeline + run diff/compare view
+- [x] **M6** — Trajectory timeline view: collapsible span cards, criterion→span highlight linking, URL-shareable highlight state via `?highlight=`
+- [ ] **M7** — Run diff/compare view
 - **Later**: cost/latency dashboards, OpenAI judge, VS Code extension
 
 ---
