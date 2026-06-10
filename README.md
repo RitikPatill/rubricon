@@ -1,5 +1,9 @@
 # Rubricon
 
+
+> **Video walkthrough:** https://youtu.be/NmtgSvUIuxs
+> **60-second overview:** https://youtu.be/HJZUurVyh1w
+
 > Define YAML rubrics, run your agent through test scenarios, get LLM-judged per-criterion scores with full trajectory traces in a web dashboard.
 
 ![demo](docs/demo.gif)
